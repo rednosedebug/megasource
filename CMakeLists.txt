@@ -333,6 +333,40 @@ message(STATUS "-----------------------------------------------------")
 add_subdirectory("libs/libmodplug-${MEGA_MODPLUG_VER}" ${CMAKE_BINARY_DIR}/libmodplug)
 set(MEGA_MODPLUG modplug-static)
 
+# FFmpeg (pre-built for Android; used by love's MP4 video/audio backend).
+# Mirrors the LuaJIT "prebuilt on Android" pattern above: each of FFmpeg's
+# shared libraries is registered as an IMPORTED SHARED target pointing at
+# the .so for the current ANDROID_ABI, built via a manual NDK cross-compile
+# of FFmpeg's ./configure && make (see MP4_SUPPORT_README.md in love/ for
+# the exact configure flags used). Headers are shared across all ABIs.
+if(ANDROID)
+	message(STATUS "-----------------------------------------------------")
+	message(STATUS "Configuring: FFmpeg (prebuilt)")
+	message(STATUS "-----------------------------------------------------")
+	set(MEGA_FFMPEG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs/FFmpeg")
+	set(MEGA_FFMPEG_LIBNAMES avutil avcodec avformat swscale swresample)
+
+	set(MEGA_FFMPEG_INCLUDE "${MEGA_FFMPEG_DIR}/include")
+	set(MEGA_FFMPEG_LIBS "")
+
+	foreach(FFLIB ${MEGA_FFMPEG_LIBNAMES})
+		set(FFLIB_SO "${MEGA_FFMPEG_DIR}/android/${ANDROID_ABI}/lib/lib${FFLIB}.so")
+		if(EXISTS ${FFLIB_SO})
+			add_library(ffmpeg_${FFLIB} IMPORTED SHARED GLOBAL)
+			set_target_properties(ffmpeg_${FFLIB} PROPERTIES
+				IMPORTED_LOCATION ${FFLIB_SO}
+			)
+			target_include_directories(ffmpeg_${FFLIB} INTERFACE ${MEGA_FFMPEG_INCLUDE})
+			list(APPEND MEGA_FFMPEG_LIBS ffmpeg_${FFLIB})
+		else()
+			message(WARNING "FFmpeg lib${FFLIB}.so not found for ABI ${ANDROID_ABI} at ${FFLIB_SO}; "
+				"love.video MP4 support will not be built for this ABI.")
+			set(MEGA_FFMPEG_LIBS)
+			break()
+		endif()
+	endforeach()
+endif()
+
 # LuaJIT
 if(MSVC)
 	message(STATUS "-----------------------------------------------------")
