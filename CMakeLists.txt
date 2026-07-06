@@ -339,6 +339,22 @@ set(MEGA_MODPLUG modplug-static)
 # the .so for the current ANDROID_ABI, built via a manual NDK cross-compile
 # of FFmpeg's ./configure && make (see MP4_SUPPORT_README.md in love/ for
 # the exact configure flags used). Headers are shared across all ABIs.
+#
+# DIAGNOSTIC INSTRUMENTATION: this block writes a plain-text file to the
+# CMake binary dir on every configure pass, regardless of log verbosity
+# settings, specifically because Gradle's externalNativeBuild has been
+# observed to suppress message(STATUS ...) output entirely in some CI
+# environments. This file is the source of truth for whether this block
+# ran at all and what it found -- check
+# app/build/intermediates/cxx/**/ffmpeg-cmake-diagnostic.txt in the build
+# output (or unzip the AAR/APK's cxx debug metadata) if love.video's MP4
+# support isn't working and the Actions log doesn't show why.
+set(_FFMPEG_DIAG_FILE "${CMAKE_BINARY_DIR}/ffmpeg-cmake-diagnostic.txt")
+file(WRITE ${_FFMPEG_DIAG_FILE} "megasource/CMakeLists.txt FFmpeg block reached.\n")
+file(APPEND ${_FFMPEG_DIAG_FILE} "ANDROID=${ANDROID}\n")
+file(APPEND ${_FFMPEG_DIAG_FILE} "ANDROID_ABI=${ANDROID_ABI}\n")
+file(APPEND ${_FFMPEG_DIAG_FILE} "CMAKE_CURRENT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}\n")
+
 if(ANDROID)
 	message(STATUS "-----------------------------------------------------")
 	message(STATUS "Configuring: FFmpeg (prebuilt)")
@@ -349,9 +365,17 @@ if(ANDROID)
 	set(MEGA_FFMPEG_INCLUDE "${MEGA_FFMPEG_DIR}/include")
 	set(MEGA_FFMPEG_LIBS "")
 
+	file(APPEND ${_FFMPEG_DIAG_FILE} "MEGA_FFMPEG_DIR=${MEGA_FFMPEG_DIR}\n")
+	if(EXISTS ${MEGA_FFMPEG_DIR})
+		file(APPEND ${_FFMPEG_DIAG_FILE} "MEGA_FFMPEG_DIR exists: YES\n")
+	else()
+		file(APPEND ${_FFMPEG_DIAG_FILE} "MEGA_FFMPEG_DIR exists: NO -- libs/FFmpeg missing entirely from checkout!\n")
+	endif()
+
 	foreach(FFLIB ${MEGA_FFMPEG_LIBNAMES})
 		set(FFLIB_SO "${MEGA_FFMPEG_DIR}/android/${ANDROID_ABI}/lib/lib${FFLIB}.so")
 		if(EXISTS ${FFLIB_SO})
+			file(APPEND ${_FFMPEG_DIAG_FILE} "FOUND: ${FFLIB_SO}\n")
 			add_library(ffmpeg_${FFLIB} IMPORTED SHARED GLOBAL)
 			set_target_properties(ffmpeg_${FFLIB} PROPERTIES
 				IMPORTED_LOCATION ${FFLIB_SO}
@@ -359,12 +383,21 @@ if(ANDROID)
 			target_include_directories(ffmpeg_${FFLIB} INTERFACE ${MEGA_FFMPEG_INCLUDE})
 			list(APPEND MEGA_FFMPEG_LIBS ffmpeg_${FFLIB})
 		else()
+			file(APPEND ${_FFMPEG_DIAG_FILE} "MISSING: ${FFLIB_SO}\n")
 			message(WARNING "FFmpeg lib${FFLIB}.so not found for ABI ${ANDROID_ABI} at ${FFLIB_SO}; "
 				"love.video MP4 support will not be built for this ABI.")
 			set(MEGA_FFMPEG_LIBS)
 			break()
 		endif()
 	endforeach()
+
+	if(MEGA_FFMPEG_LIBS)
+		file(APPEND ${_FFMPEG_DIAG_FILE} "RESULT: MEGA_FFMPEG_LIBS successfully set to: ${MEGA_FFMPEG_LIBS}\n")
+	else()
+		file(APPEND ${_FFMPEG_DIAG_FILE} "RESULT: MEGA_FFMPEG_LIBS is EMPTY -- FFmpeg will NOT be linked.\n")
+	endif()
+else()
+	file(APPEND ${_FFMPEG_DIAG_FILE} "RESULT: ANDROID is false, this whole if(ANDROID) block was skipped.\n")
 endif()
 
 # LuaJIT
